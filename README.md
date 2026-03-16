@@ -1,5 +1,13 @@
 # Online Course Management System
 
+## Course : CSE327.7 Software Engineering
+
+## Group:
+1.  Md. Sofwan Islam      2231769042
+2. 	Antara Labiba         2233585042
+3.  Md Rezwan Ahmed       2312861042
+4.  Iftekhar Hasan Ifty   2322276042
+
 ## Project Overview
 
 This project is about developing an Online Course Management System which is a web based platform for helping both students and instructors to manage course related activities in one place. In many universities and institutions, different tasks like assignment submission, grading and announcements are done in different platforms which sometimes creates confusion and inefficiency.
