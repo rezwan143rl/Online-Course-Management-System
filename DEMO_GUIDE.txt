@@ -1,0 +1,452 @@
+================================================================
+  DEMO OPERATION GUIDE - COURSE MANAGEMENT SYSTEM
+  Read this before the demo. Know every step by heart.
+================================================================
+
+TEST ACCOUNTS (all passwords: 123)
+------------------------------------
+  admin@test.com      -> Admin / Chairman
+  inst@test.com       -> Instructor (Dr. Rahman)
+  alice@test.com      -> Student (good attendance 80%, enrolled course 1)
+  bob@test.com        -> Student (bad attendance 40%, Proxy will block)
+
+URLS TO HAVE OPEN BEFORE SIR ARRIVES
+--------------------------------------
+  Tab 1: http://localhost/cms             (login page)
+  Tab 2: http://localhost/cms/test_singleton.php
+  Tab 3: http://localhost/phpmyadmin      (notifications table ready)
+  VS Code: all 7 pattern files open as tabs
+
+================================================================
+  STEP BY STEP DEMO - DO THIS IN ORDER
+================================================================
+
+----------------------------------------------------------------
+STEP 1 - LOGIN PAGE
+----------------------------------------------------------------
+  - Open http://localhost/cms
+  - Show the login form
+  - Point out the quick-fill buttons at the bottom
+    (Admin, Instructor, Alice, Bob)
+
+  SAY:
+  "This is the login page. We have four test accounts covering
+  all three roles. The role is stored in the database and read
+  by the Factory pattern on login."
+
+
+----------------------------------------------------------------
+STEP 2 - SINGLETON PROOF (do this first, gets it out of the way)
+----------------------------------------------------------------
+  - Click the tab with test_singleton.php
+  - Show the page to sir
+
+  POINT TO:
+  - The Object IDs column - all three show the same number
+  - The === comparison rows - both say "true - same object"
+
+  SAY:
+  "Singleton is proven here. I call getInstance() three separate
+  times into three different variables. The === operator in PHP
+  returns true only if both variables point to the exact same
+  object in memory. All three comparisons are true. spl_object_id
+  gives PHP's internal ID for each object - all three have the
+  same ID. Only one object was ever created. The private constructor
+  makes new Database() impossible from outside the class."
+
+  IF SIR ASKS TO SEE THE CODE:
+  - Switch to VS Code, open Database.php
+  - Point to: private function __construct()
+  - Point to: private static ?Database $instance = null
+  - Point to: getInstance() method - the if null check
+
+
+----------------------------------------------------------------
+STEP 3 - FACTORY PATTERN (login as different roles)
+----------------------------------------------------------------
+  ACTION 1:
+  - Go back to login page (Tab 1)
+  - Click the "Alice" quick-fill button
+  - Click Log In
+  - TOP NAVIGATION shows: "Alice  --  Student"
+
+  ACTION 2:
+  - Click Logout
+  - Click the "Admin" quick-fill button
+  - Click Log In
+  - TOP NAVIGATION shows: "Admin  --  Admin / Chairman"
+
+  ACTION 3:
+  - Click Logout
+  - Click the "Instructor" quick-fill button
+  - Click Log In
+  - TOP NAVIGATION shows: "Dr. Rahman  --  Instructor"
+
+  SAY:
+  "The database row only contains a role string. UserFactory reads
+  that string and returns the correct subclass - Student, Instructor,
+  or Admin. The top navigation calls getLabel() on whichever object
+  was created, and each subclass returns its own label. The switch
+  block in UserFactory is where the decision happens. Adding a new
+  role means adding one class and one case there - nothing else changes."
+
+  IF SIR ASKS TO SEE THE CODE:
+  - VS Code -> UserFactory.php
+  - Point to: class Student extends User, class Instructor, class Admin
+  - Point to: UserFactory::create() switch block
+
+
+----------------------------------------------------------------
+STEP 4 - BUILDER PATTERN (login as Admin)
+----------------------------------------------------------------
+  - Make sure you are logged in as Admin
+  - Click "Create Course" tab
+
+  ACTION 1 - Standard Course:
+  - Title field: type "Data Structures"
+  - Instructor dropdown: select Dr. Rahman
+  - Course Type: leave as "Standard Course"
+  - Click "Create Course"
+  - Success message appears
+
+  ACTION 2 - Short Course:
+  - Title field: type "Workshop: Git Basics"
+  - Instructor dropdown: select Dr. Rahman
+  - Course Type: change to "Short Course"
+  - Click "Create Course"
+  - Success message appears
+
+  NOW go to phpMyAdmin:
+  - Click course_system database
+  - Click course_sections table
+  - Show the rows
+  - Data Structures has 3 section rows
+  - Workshop: Git Basics has 1 section row
+
+  SAY:
+  "The same form, the same button - but two completely different
+  course structures were built. The Director decided which Builder
+  to use based on the course type selected. buildStandardCourse
+  calls addSection three times and addGradeItem three times.
+  buildShortCourse calls them once each. The Director controls
+  what gets built. The Builder controls how each step executes.
+  This is identical to the Sandwich Director from class that had
+  DineInOrder and TakeoutOrder producing different sandwiches."
+
+  IF SIR ASKS TO SEE THE CODE:
+  - VS Code -> Builder.php
+  - Point to: CourseDirector::buildStandardCourse()
+  - Point to: CourseDirector::buildShortCourse()
+  - Show the step calls are the same structure, different content
+
+
+----------------------------------------------------------------
+STEP 5 - COMPOSITE PATTERN (login as Instructor)
+----------------------------------------------------------------
+  - Logout from Admin
+  - Login as inst@test.com
+  - "My Courses" tab is shown by default
+
+  POINT TO the course content tree on screen:
+  - Section headers with item counts shown on the right
+  - Items inside each section labeled lecture / assignment / quiz
+
+  SAY:
+  "Course structure uses the Composite pattern. A course has
+  sections, and sections have items. Both CourseSection and
+  CourseItem implement the same CourseComponent interface.
+  Calling render() on a section automatically calls render()
+  on every child inside it. The display code does not need to
+  check whether it is dealing with a section or an item -
+  both respond to the same methods."
+
+  IF SIR ASKS TO SEE THE CODE:
+  - VS Code -> Composite.php
+  - Point to: interface CourseComponent at the top
+  - Point to: CourseSection::render() - show the foreach loop
+    calling $child->render() on each child
+  - Point to: CourseItem::render() - just returns its own data,
+    no loop, no children. This is the leaf.
+
+
+----------------------------------------------------------------
+STEP 6 - OBSERVER PATTERN TRIGGER 1 (Announcements)
+----------------------------------------------------------------
+  - Still logged in as Instructor
+  - Click "Announcements" tab
+
+  ACTION:
+  - Course dropdown: select Fundamentals of Programming
+  - Message box: type "Assignment 1 deadline extended to Friday"
+  - Click "Post and Notify Students"
+  - Success message: "Announcement posted. All enrolled students
+    notified (Observer pattern)."
+
+  NOW switch to Alice's browser tab (or open new tab, login as alice):
+  - Click "Notifications" tab
+  - The message is there: "New announcement in Fundamentals..."
+
+  SAY:
+  "This is Observer pattern trigger one. CourseNotifier is the
+  Subject. When the announcement was posted, notifyEnrolledStudents
+  fetched every student enrolled in that course, created one
+  DatabaseNotifier per student, registered each as an Observer,
+  then called notifyObservers(). That method loops through the
+  list and calls update() on each Observer. DatabaseNotifier's
+  update() inserts a row into the notifications table. The
+  instructor code does not know how students are notified.
+  This is the WeatherStation example from class - same structure."
+
+  OPEN phpMyAdmin -> notifications table:
+  "Every row here was written by DatabaseNotifier's update()
+  method. The instructor never touched this table directly."
+
+  IF SIR ASKS "WHO IS THE SUBJECT":
+  "CourseNotifier is the Subject. It has registerObserver(),
+  unregisterObserver(), and notifyObservers(). DatabaseNotifier
+  and AttendanceNotifier are the Concrete Observers."
+
+  IF SIR ASKS TO SEE THE CODE:
+  - VS Code -> Observer.php
+  - Point to: interface Observer - update() method
+  - Point to: CourseNotifier - the observers array, the loop
+  - Point to: DatabaseNotifier::update() - the INSERT
+  - Point to: notifyEnrolledStudents() - how it all connects
+
+
+----------------------------------------------------------------
+STEP 7 - OBSERVER PATTERN TRIGGER 2 (Attendance absence alert)
+----------------------------------------------------------------
+  - Still logged in as Instructor
+  - Click "Attendance" tab
+
+  ACTION:
+  - Course: Fundamentals of Programming
+  - Student: Alice
+  - Date: today (already filled)
+  - Status: change to "Absent (triggers Observer notification)"
+  - Click "Mark Attendance"
+  - Success message appears
+
+  Switch to Alice's browser tab:
+  - Refresh the page
+  - Click "Notifications" tab
+  - A new notification: "You were marked absent in Fundamentals
+    of Programming on [today's date]"
+
+  SAY:
+  "This is Observer trigger two - the absence alert. This time
+  AttendanceNotifier fires, not DatabaseNotifier. Two different
+  Concrete Observer types, same Subject. This is exactly like
+  WeatherStation notifying multiple Client objects - same
+  notifyObservers() call, different observers receiving it."
+
+  ALSO SHOW the Attendance Summary table below the form:
+  "The table shows attendance percentages. The Proxy Check column
+  shows which students the Proxy will allow or block. This connects
+  Observer and Proxy together."
+
+
+----------------------------------------------------------------
+STEP 8 - PROXY PATTERN (the most visual demo)
+----------------------------------------------------------------
+  - Logout
+  - Login as bob@test.com
+
+  - Go to "Browse Courses" tab automatically shown
+
+  POINT TO the table:
+  - Course 1 row, Proxy Check column shows:
+    "Attendance too low: 40.0% (minimum 75% required)"
+  - Action column shows "Blocked"
+
+  SAY:
+  "Bob is enrolled in Course 1. But the Proxy blocked him.
+  CourseProxy ran three checks. Check one - enrolled? Yes.
+  Check two - prerequisite? None for Course 1. Check three -
+  attendance? Bob has 2 present out of 5 classes. 40%.
+  Below the 75% threshold. Proxy returns allowed: false with
+  the specific reason, which is displayed here."
+
+  OPEN phpMyAdmin -> attendance table, filter student_id = 4:
+  "Here is the raw data. Two present rows, three absent rows.
+  The Proxy calculated this live from the database."
+
+  NOW logout, login as alice@test.com:
+  - Browse Courses tab
+  - Course 1: shows "Access granted" - Alice has 80% attendance
+  - Course 2: shows "Not enrolled in this course"
+
+  Try enrolling Alice in Course 2:
+  - Click "Enroll" next to Course 2
+  - Message: "Cannot enroll: prerequisite Fundamentals of
+    Programming not passed yet"
+
+  SAY:
+  "Alice passes check one for Course 1 - enrolled. Check three -
+  attendance 80%, above 75%. Access granted. For Course 2,
+  enrollment is blocked because OOP requires Fundamentals to be
+  passed first. The Proxy checked Alice's weighted average in
+  Course 1, calculated it from the grades table, and compared
+  to the 50% threshold. All access logic lives in CourseProxy.
+  If the threshold changes, we change one line. Nothing else."
+
+  IF SIR ASKS TO SEE THE CODE:
+  - VS Code -> Proxy.php
+  - Point to: interface CourseGateway - both classes implement this
+  - Point to: RealCourse - no access logic at all
+  - Point to: CourseProxy::checkAccess() - three sequential checks
+  - Show how each check returns early with a reason string
+
+
+----------------------------------------------------------------
+STEP 9 - DECORATOR PATTERN (interactive grade demo)
+----------------------------------------------------------------
+  - Make sure logged in as Alice
+  - Click "My Grades" tab
+
+  SHOW BASE GRADE:
+  - No checkboxes ticked
+  - Grade breakdown table shows:
+    Quiz 1:      78 marks, 20% weight
+    Assignment:  85 marks, 30% weight
+    Final Exam:  80 marks, 50% weight
+  - Policy line: "Weighted Average"
+  - Final grade: 81.1
+    (calculation: 78x0.20 + 85x0.30 + 80x0.50 = 15.6+25.5+40 = 81.1)
+
+  ACTION 1 - Add Curve:
+  - Tick "Apply Curve (+5 marks)"
+  - Click Recalculate
+  - Grade becomes: 86.1
+  - Policy line: "Weighted Average + Curve (+5)"
+
+  SAY:
+  "CurveDecorator wrapped WeightedGrade. It called calculate()
+  on the base, got 81.1, added 5, returned 86.1. The base
+  WeightedGrade class was not changed at all."
+
+  ACTION 2 - Add Drop Lowest on top:
+  - Tick "Drop Lowest Score" also (keep Curve ticked)
+  - Click Recalculate
+  - Grade changes
+  - Policy line: "Weighted Average + Drop Lowest + Curve (+5)"
+
+  SAY:
+  "Now DropLowestDecorator also wraps the calculator. It sorted
+  the components by marks, removed the lowest - Quiz 1 at 78 -
+  re-normalized the remaining weights to sum to 1.0, then passed
+  the modified array down to WeightedGrade. Then CurveDecorator
+  added 5 on top of that result. Three decorators stacked.
+  The describe() method on each decorator appends its name,
+  which is why the policy line shows the full chain."
+
+  IF SIR ASKS "WHY NOT STRATEGY":
+  "Strategy swaps one algorithm for another - only one active at
+  a time. Here we need multiple policies simultaneously. Drop
+  lowest AND curve AND bonus all active together. Decorator
+  allows stacking. Strategy cannot do that."
+
+  IF SIR ASKS TO SEE THE CODE:
+  - VS Code -> Decorator.php
+  - Point to: interface GradeCalculator at the top
+  - Point to: WeightedGrade::calculate() - the base, just math
+  - Point to: CurveDecorator::calculate() - calls wrapped first,
+    then adds curve on top
+  - Point to: buildGradeCalculator() at the bottom - shows stacking
+
+
+================================================================
+  QUESTIONS SIR WILL ASK - SHORT ANSWERS
+================================================================
+
+Q: Who is the Subject in Observer?
+A: CourseNotifier. DatabaseNotifier and AttendanceNotifier
+   are the Observers.
+
+Q: Why not put access checks directly in dashboard.php?
+A: Every place accessing course content would need the same
+   checks copied. If threshold changes, one line in Proxy
+   changes. Nothing else.
+
+Q: Why Decorator not Strategy for grading?
+A: Strategy only allows one algorithm at a time. We need
+   multiple policies active together. Decorator stacks.
+
+Q: Where is Factory actually used?
+A: At login. DB row has a role string. UserFactory::create()
+   reads it, switch block returns correct subclass.
+
+Q: Why Builder not just a constructor?
+A: Constructor with all parameters is unreadable. Builder
+   separates each step. Director decides which steps run.
+
+Q: Prove Singleton.
+A: Open test_singleton.php. Same object ID three times.
+   === comparison true.
+
+Q: What is the difference between Proxy and Facade?
+A: Facade simplifies a complex interface. Proxy controls
+   access to an existing interface. Both wrap something
+   but for different reasons.
+
+Q: How does Composite help here?
+A: Without it, display code needs: if section, loop it;
+   if item, show it. With Composite, both implement the same
+   interface. render() on a section cascades to all children
+   automatically.
+
+================================================================
+  TEAM - WHO EXPLAINS WHAT
+================================================================
+
+  YOU (Member 1):
+    Patterns: Singleton + Observer
+    Demo steps: 2 and 6 and 7
+    Key line: "Singleton = one DB object. Observer = instructor
+    posts, DatabaseNotifier fires for every enrolled student."
+
+  MEMBER 2:
+    Pattern: Decorator
+    Demo step: 9
+    Key line: "WeightedGrade is base. Decorators wrap and stack.
+    Multiple policies active simultaneously."
+
+  MEMBER 3:
+    Pattern: Proxy
+    Demo step: 8
+    Key line: "Three checks: enrolled, prerequisite passed,
+    attendance above 75%. All logic in one place."
+
+  MEMBER 4:
+    Patterns: Factory + Builder + Composite
+    Demo steps: 3, 4, 5
+    Key line: "Factory creates correct User subclass from role
+    string. Builder constructs full course structure step by step.
+    Composite lets sections and items share one interface."
+
+================================================================
+  IF SOMETHING BREAKS DURING DEMO
+================================================================
+
+  DB connection fails:
+  -> Check XAMPP MySQL is running. Check database name is
+     course_system in Database.php line 44.
+
+  Notifications not appearing:
+  -> Check notifications table exists in phpMyAdmin.
+     Check student is enrolled in the course announced.
+
+  Proxy not blocking Bob:
+  -> Check attendance table has Bob's rows (student_id = 4).
+     Should be 2 present, 3 absent for course_id = 1.
+
+  Grade not showing for Alice:
+  -> Check grades table has rows for student_id = 3
+     with grade_item_id 1, 2, 3.
+
+  Page shows blank / error:
+  -> Check all require_once paths in dashboard.php are correct.
+     Folder must be inside htdocs/cms/
+
+================================================================
