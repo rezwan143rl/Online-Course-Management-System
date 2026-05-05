@@ -101,7 +101,7 @@ if ($role === 'admin' && isset($_POST['add_instructor'])) {
         if ($result->num_rows > 0) {
             $msg = "Error: Email already exists.";
         } else {
-            $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+            $hashedPassword =$password;
             $stmt = $db->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'instructor')");
             $stmt->bind_param('sss', $name, $email, $hashedPassword);
             $stmt->execute();
@@ -131,7 +131,7 @@ if ($role === 'admin' && isset($_POST['add_student'])) {
         if ($result->num_rows > 0) {
             $msg = "Error: Email already exists.";
         } else {
-            $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+            $hashedPassword = $password;
             $stmt = $db->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'student')");
             $stmt->bind_param('sss', $name, $email, $hashedPassword);
             $stmt->execute();
@@ -160,6 +160,7 @@ if ($role === 'instructor' && isset($_POST['post_announcement'])) {
         $stmt->close();
 
         notifyEnrolledStudents($db, $courseId, "New announcement: $text");
+        notifyWebhookForEnrolledStudents($db, $courseId, "New announcement: $text");
         $msg = "Announcement posted. All enrolled students notified (Observer pattern).";
     }
 }
@@ -188,12 +189,12 @@ if ($role === 'instructor' && isset($_POST['mark_attendance'])) {
                 "SELECT title FROM courses WHERE courseid = $courseId"
             )->fetch_assoc()['title'];
 
+            $message = "You were marked absent in '$courseName' on $date.";
+
             $subject = new CourseNotifier();
             $subject->registerObserver(new AttendanceNotifier($db, $studentId));
-            $subject->notifyObservers(
-                "You were marked absent in '$courseName' on $date.",
-                $courseId
-            );
+            $subject->notifyObservers($message, $courseId);
+            sendNotificationWebhook($db, $studentId, $message, null, null, 'absence', $courseName);
         }
         $msg = "Attendance marked. Student notified if absent (Observer pattern).";
     }
@@ -313,6 +314,112 @@ if (isset($_GET['mark_read'])) {
     $db->query("UPDATE notifications SET is_read = 1 WHERE student_id = $uid");
     header('Location: dashboard.php');
     exit;
+}
+//===========================================================================
+#### email sending via webhook (for Observer pattern) ####
+function sendNotificationWebhook(mysqli $db, int $studentId, string $message, ?string $email = null, ?string $name = null, string $type = 'notification', ?string $courseName = null): void
+{
+    if (!$email || !$name) {
+        $stmt = $db->prepare("SELECT email, name FROM users WHERE userid = ?");
+        $stmt->bind_param('i', $studentId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc() ?: [];
+        $stmt->close();
+
+        $email = $email ?? ($row['email'] ?? '');
+        $name  = $name  ?? ($row['name']  ?? '');
+    }
+
+    if (!$email) {
+        return;
+    }
+
+    $payload = json_encode([
+        'student_id' => $studentId,
+        'email'      => $email,
+        'name'       => $name,
+        'message'    => $message,
+        'type'       => $type,
+        'course_name' => $courseName,
+    ], JSON_UNESCAPED_UNICODE);
+
+    $url = 'http://localhost:5678/webhook/notification';
+    $success = false;
+
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        $response = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($errno === 0 && $httpCode >= 200 && $httpCode < 300) {
+            $success = true;
+        } else {
+            error_log("Notification webhook failed for student {$studentId}: curl_errno={$errno}, http_code={$httpCode}, response={$response}");
+        }
+    } elseif (ini_get('allow_url_fopen')) {
+        $options = [
+            'http' => [
+                'method'  => 'POST',
+                'header'  => "Content-Type: application/json\r\n",
+                'content' => $payload,
+                'timeout' => 5,
+            ],
+        ];
+        $context = stream_context_create($options);
+        $response = @file_get_contents($url, false, $context);
+        if ($response !== false) {
+            $success = true;
+        } else {
+            error_log("Notification webhook failed for student {$studentId}: file_get_contents failed");
+        }
+    } else {
+        error_log('Notification webhook failed: no HTTP transport available.');
+    }
+
+    if (!$success) {
+        // Fail silently for the user, but leave a server-side log if webhook can't be sent.
+    }
+}
+
+function notifyWebhookForEnrolledStudents(mysqli $db, int $courseId, string $message): void
+{
+    // Get course name
+    $courseStmt = $db->prepare("SELECT title FROM courses WHERE courseid = ?");
+    $courseStmt->bind_param('i', $courseId);
+    $courseStmt->execute();
+    $courseName = $courseStmt->get_result()->fetch_assoc()['title'] ?? '';
+    $courseStmt->close();
+
+    $stmt = $db->prepare(
+        "SELECT u.email, u.name, e.student_id
+         FROM enrollments e
+         JOIN users u ON e.student_id = u.userid
+         WHERE e.course_id = ?"
+    );
+    $stmt->bind_param('i', $courseId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    foreach ($rows as $row) {
+        sendNotificationWebhook(
+            $db,
+            (int)$row['student_id'],
+            $message,
+            $row['email'],
+            $row['name'],
+            'announcement',
+            $courseName
+        );
+    }
 }
 
 // ============================================================
@@ -711,9 +818,9 @@ function getStudentGrade(mysqli $db, int $studentId, int $courseId): array
     <button class="tab-btn <?= $tab==='main'?'active':'' ?>"       onclick="setTab('main')">Browse Courses</button>
     <button class="tab-btn <?= $tab==='mycourses'?'active':'' ?>"  onclick="setTab('mycourses')">My Courses</button>
     <button class="tab-btn <?= $tab==='grades'?'active':'' ?>"     onclick="setTab('grades')">My Grades</button>
-    <button class="tab-btn <?= $tab==='notifs'?'active':'' ?>">
-      Notifications<?php if ($unreadCount > 0): ?> (<?= $unreadCount ?>)<?php endif; ?>
-    </button>
+    <button class="tab-btn <?= $tab==='notifs'?'active':'' ?>" onclick="setTab('notifs')">
+  Notifications<?php if ($unreadCount > 0): ?> (<?= $unreadCount ?>)<?php endif; ?>
+</button>
   <?php endif; ?>
 </div>
 
